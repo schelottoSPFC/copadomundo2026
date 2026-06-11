@@ -180,6 +180,25 @@
   .fix.ft .fsep{color:var(--ink);font-weight:700}
   .livebadge{font-size:10px;font-weight:700;color:var(--grass);background:rgba(39,185,110,.15);padding:2px 7px;border-radius:4px;margin-left:6px;animation:pulse 2s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  /* live status bar */
+  .live-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;font-size:13px}
+  .live-status{flex:1;min-width:0;color:var(--muted)}
+  .live-status.ls-ok{color:var(--grass)}
+  .live-status.ls-err{color:var(--red)}
+  .live-status.ls-warn{color:var(--amber)}
+  .live-status.ls-loading{color:var(--muted)}
+  .live-bar-btns{display:flex;gap:8px;flex-wrap:wrap}
+  .live-bar button{background:var(--panel2);border:1px solid var(--line2);color:var(--muted);
+    font-family:var(--body);font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;transition:.15s}
+  .live-bar button:hover{color:var(--ink);border-color:var(--ink)}
+
+  /* debug box */
+  #debug-box{display:none;margin-top:10px;background:var(--panel2);border:1px solid var(--line2);
+    border-radius:10px;padding:14px;font-size:12px;color:var(--muted);overflow-x:auto}
+  #debug-box.open{display:block}
+  #debug-box table td,#debug-box table th{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left}
+  #debug-box table th{color:var(--faint);font-weight:500}
   .fix .fcity{font-size:11px;color:var(--faint);text-align:right;white-space:nowrap}
   .fix-bets{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px;padding:2px 0 4px}
   .fbet{font-size:10.5px;font-weight:500;padding:2px 8px;border-radius:5px;display:inline-flex;align-items:center;gap:4px;line-height:1.4}
@@ -259,6 +278,14 @@
       <span class="pill"><span class="dot"></span><b>Não iniciado</b> · 0 de 104 jogos</span>
     </div>
     <h1>Painel - Copa 2026</h1>
+  <div class="live-bar">
+    <span class="live-status ls-loading" id="live-status">⏳ Conectando à API...</span>
+    <div class="live-bar-btns">
+      <button id="refresh-btn">↻ Atualizar agora</button>
+      <button id="debug-toggle">🔍 Diagnóstico API</button>
+    </div>
+  </div>
+  <div id="debug-box"></div>
   </header>
 
   <div class="tabs">
@@ -702,49 +729,73 @@ document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
   window.scrollTo({top:0,behavior:"smooth"});
 }));
 
-// ---- LIVE UPDATE — busca /api/scores a cada 90s ----
+// ---- LIVE UPDATE ----
 let liveTimer;
+let lastApiData = null;
+
+// Normaliza string pra comparação: remove acentos, lowercase, trim
+// "México" e "Mexico" → "mexico" | "África do Sul" e "Africa do Sul" → "africa do sul"
+function norm(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim(); }
+
+function setLiveStatus(type, msg){
+  const el = document.getElementById("live-status");
+  if(!el) return;
+  const icons = { ok:"✅", warn:"⚠️", err:"❌", loading:"⏳" };
+  el.textContent = (icons[type]||"") + " " + msg;
+  el.className = "live-status ls-"+type;
+}
+
 async function fetchLive(){
+  setLiveStatus("loading","Buscando placares...");
   try{
-    const r=await fetch("/api/scores");
-    if(!r.ok) return;
-    const data=await r.json();
-    if(data.matches) updateSchedule(data.matches);
+    const r = await fetch("/api/scores");
+    const data = await r.json();
+    if(!r.ok){
+      setLiveStatus("err", "Erro " + r.status + ": " + (data.error||"resposta inválida"));
+      renderDebug(data);
+      return;
+    }
+    lastApiData = data;
+    const total = (data.matches||[]).length;
+    const live  = (data.matches||[]).filter(m=>["1H","2H","HT","ET"].includes(m.status)).length;
+    const ft    = (data.matches||[]).filter(m=>["FT","AET","PEN"].includes(m.status)).length;
+    setLiveStatus("ok",
+      "Atualizado " + new Date(data.updated).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) +
+      " · " + total + " jogo(s) hoje · " + live + " ao vivo · " + ft + " encerrado(s)"
+    );
+    if(data.matches)   updateSchedule(data.matches);
     if(data.standings) updateStandings(data.standings);
-  }catch(e){console.warn("Live update:",e);}
+    renderDebug(data);
+  } catch(e){
+    setLiveStatus("err","Falha na conexão: " + e.message);
+  }
 }
 
 function updateSchedule(matches){
-  const seps=document.querySelectorAll(".fsep");
+  const seps = document.querySelectorAll(".fsep");
   matches.forEach(m=>{
+    const mHome = norm(m.home), mAway = norm(m.away);
     seps.forEach(sep=>{
-      if(sep.dataset.ha===m.home && sep.dataset.aw===m.away){
+      if(norm(sep.dataset.ha)===mHome && norm(sep.dataset.aw)===mAway){
         if(m.status==="NS") return;
-        const sh=m.score_home??"-", sa=m.score_away??"-";
-        sep.textContent=sh+" × "+sa;
-        const fx=sep.closest(".fix");
+        const sh = m.score_home ?? "-", sa = m.score_away ?? "-";
+        sep.textContent = sh + " × " + sa;
+        const fx = sep.closest(".fix");
         if(!fx) return;
         fx.classList.remove("live","ft");
-        const isLive=["1H","2H","ET"].includes(m.status);
-        const isFT=["FT","AET","PEN"].includes(m.status);
-        if(isLive){
+        const isLive = ["1H","2H","ET"].includes(m.status);
+        const isHT   = m.status === "HT";
+        const isFT   = ["FT","AET","PEN"].includes(m.status);
+        // limpa badge anterior
+        const oldB = fx.querySelector(".livebadge"); if(oldB) oldB.remove();
+        if(isLive || isHT){
           fx.classList.add("live");
-          if(!fx.querySelector(".livebadge")){
-            const b=document.createElement("span");
-            b.className="livebadge"; b.textContent=m.minute?"AO VIVO "+m.minute+"'":"AO VIVO";
-            sep.after(b);
-          }else{fx.querySelector(".livebadge").textContent=m.minute?"AO VIVO "+m.minute+"'":"AO VIVO";}
-        }else if(isFT){
+          const b = document.createElement("span");
+          b.className = "livebadge";
+          b.textContent = isHT ? "INTERVALO" : (m.minute ? "AO VIVO "+m.minute+"'" : "AO VIVO");
+          sep.after(b);
+        } else if(isFT){
           fx.classList.add("ft");
-          const lb=fx.querySelector(".livebadge"); if(lb) lb.remove();
-        }
-        if(m.status==="HT"){
-          sep.textContent=sh+" × "+sa;
-          if(!fx.querySelector(".livebadge")){
-            const b=document.createElement("span"); b.className="livebadge"; b.textContent="INTERVALO";
-            sep.after(b);
-          }else{fx.querySelector(".livebadge").textContent="INTERVALO";}
-          fx.classList.add("live");
         }
       }
     });
@@ -754,36 +805,84 @@ function updateSchedule(matches){
 function updateStandings(standings){
   Object.entries(standings).forEach(([g,teams])=>{
     teams.sort((a,b)=>a.rank-b.rank);
-    const card=document.querySelector('.gcard[data-g="'+g+'"]');
+    const card = document.querySelector('.gcard[data-g="'+g+'"]');
     if(!card) return;
     teams.forEach(t=>{
-      const row=card.querySelector('tr[data-team="'+t.team+'"]');
-      if(!row) return;
-      const p=row.querySelector('[data-s="pts"]'),j=row.querySelector('[data-s="j"]'),s=row.querySelector('[data-s="sg"]');
-      if(p) p.textContent=t.pts;
-      if(j) j.textContent=t.j;
-      if(s) s.textContent=t.sg>0?"+"+t.sg:t.sg;
+      // busca por nome normalizado para evitar mismatch de acento
+      const rows = card.querySelectorAll("tr[data-team]");
+      rows.forEach(row=>{
+        if(norm(row.dataset.team)===norm(t.team)){
+          const p=row.querySelector('[data-s="pts"]'),j=row.querySelector('[data-s="j"]'),s=row.querySelector('[data-s="sg"]');
+          if(p) p.textContent=t.pts; if(j) j.textContent=t.j;
+          if(s) s.textContent=t.sg>0?"+"+t.sg:t.sg;
+        }
+      });
     });
-    const tbody=card.querySelector("tbody");
+    const tbody = card.querySelector("tbody");
     if(tbody){
-      const rows=[...tbody.querySelectorAll("tr")];
+      const rows = [...tbody.querySelectorAll("tr")];
       rows.sort((a,b)=>{
-        const at=teams.find(t=>t.team===a.dataset.team),bt=teams.find(t=>t.team===b.dataset.team);
-        return(at?.rank||99)-(bt?.rank||99);
+        const at=teams.find(t=>norm(t.team)===norm(a.dataset.team));
+        const bt=teams.find(t=>norm(t.team)===norm(b.dataset.team));
+        return (at?.rank||99)-(bt?.rank||99);
       });
       rows.forEach(r=>tbody.appendChild(r));
     }
   });
 }
 
+// ---- Debug panel (visível no painel, abrível por botão) ----
+function renderDebug(data){
+  const box = document.getElementById("debug-box");
+  if(!box || !box.classList.contains("open")) return;
+  if(!data){ box.innerHTML="<em>Sem dados ainda</em>"; return; }
+  const rows = (data.matches||[]).map(m=>
+    `<tr><td>${m.home_raw||m.home}</td><td>${m.away_raw||m.away}</td>`+
+    `<td>${m.score_home??"-"} × ${m.score_away??"-"}</td><td>${m.status}</td><td>${m.minute||""}</td></tr>`
+  ).join("");
+  box.innerHTML =
+    `<b>API respondeu:</b> ${data.updated ? new Date(data.updated).toLocaleTimeString("pt-BR") : "-"}<br>`+
+    `Ao vivo: ${data.live_count||0} · Hoje: ${data.today_count||0}<br><br>`+
+    (rows
+      ? `<table style="font-size:11px;border-collapse:collapse;width:100%">`+
+        `<tr style="background:rgba(255,255,255,.08)"><th>Casa</th><th>Fora</th><th>Placar</th><th>Status</th><th>Min</th></tr>`+
+        rows+`</table>`
+      : "<em>Nenhum jogo retornado pela API hoje.</em>"
+    );
+}
+
+function isOnServer(){
+  const h = location.hostname;
+  return h && h !== "localhost" && h !== "" && location.protocol !== "file:";
+}
+
 function startLive(){
+  if(!isOnServer()){
+    setLiveStatus("warn","⚠️ Dados ao vivo disponíveis apenas no Vercel — aqui você está em modo local.");
+    return;
+  }
   fetchLive();
-  liveTimer=setInterval(fetchLive,90000);
+  liveTimer = setInterval(fetchLive, 90000);
   document.addEventListener("visibilitychange",()=>{
     clearInterval(liveTimer);
-    if(!document.hidden){fetchLive();liveTimer=setInterval(fetchLive,90000);}
+    if(!document.hidden){ fetchLive(); liveTimer=setInterval(fetchLive,90000); }
   });
 }
+
+// botão de debug
+document.getElementById("debug-toggle")?.addEventListener("click",function(){
+  if(!isOnServer()){ setLiveStatus("warn","⚠️ Diagnóstico só funciona no Vercel."); return; }
+  const box = document.getElementById("debug-box");
+  const isOpen = box.classList.toggle("open");
+  this.textContent = isOpen ? "Fechar diagnóstico" : "🔍 Diagnóstico API";
+  if(isOpen) renderDebug(lastApiData);
+});
+
+document.getElementById("refresh-btn")?.addEventListener("click", ()=>{
+  if(!isOnServer()){ setLiveStatus("warn","⚠️ Atualização só funciona no Vercel."); return; }
+  fetchLive();
+});
+
 startLive();
 </script>
 </body>
