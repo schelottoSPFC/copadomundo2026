@@ -1,1 +1,7 @@
-{}
+{
+  "routes": [
+    { "src": "/api/scores", "dest": "/api/scores.js" },
+    { "src": "/api/debug",  "dest": "/api/debug.js"  },
+    { "src": "/(.*)",       "dest": "/index.html"    }
+  ]
+}

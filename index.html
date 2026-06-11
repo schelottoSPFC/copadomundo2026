@@ -746,12 +746,25 @@ function setLiveStatus(type, msg){
 }
 
 async function fetchLive(){
-  setLiveStatus("loading","Buscando placares...");
+  setLiveStatus("loading","⏳ Buscando placares...");
   try{
     const r = await fetch("/api/scores");
+
+    // Verifica se realmente voltou JSON (evita erro ao parsear HTML de 404/500)
+    const ct = r.headers.get("content-type") || "";
+    if(!ct.includes("application/json")){
+      const txt = await r.text();
+      setLiveStatus("err",
+        `❌ API retornou ${r.status} (${ct||"sem content-type"}) — função não encontrada no Vercel. `+
+        `Verifique se api/scores.js está na raiz do projeto.`
+      );
+      console.error("Resposta não-JSON:", txt.slice(0,300));
+      return;
+    }
+
     const data = await r.json();
     if(!r.ok){
-      setLiveStatus("err", "Erro " + r.status + ": " + (data.error||"resposta inválida"));
+      setLiveStatus("err", "❌ Erro " + r.status + ": " + (data.error||"resposta inválida"));
       renderDebug(data);
       return;
     }
@@ -760,14 +773,14 @@ async function fetchLive(){
     const live  = (data.matches||[]).filter(m=>["1H","2H","HT","ET"].includes(m.status)).length;
     const ft    = (data.matches||[]).filter(m=>["FT","AET","PEN"].includes(m.status)).length;
     setLiveStatus("ok",
-      "Atualizado " + new Date(data.updated).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) +
+      "✅ Atualizado " + new Date(data.updated).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) +
       " · " + total + " jogo(s) hoje · " + live + " ao vivo · " + ft + " encerrado(s)"
     );
     if(data.matches)   updateSchedule(data.matches);
     if(data.standings) updateStandings(data.standings);
     renderDebug(data);
   } catch(e){
-    setLiveStatus("err","Falha na conexão: " + e.message);
+    setLiveStatus("err","❌ Falha na conexão: " + e.message);
   }
 }
 
