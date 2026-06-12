@@ -1,33 +1,33 @@
-// api/scores.js — Vercel Serverless Function (CommonJS)
-// Consulta API-Football e devolve placares + classificação
+// api/scores.js â€” Vercel Serverless Function (CommonJS)
+// Consulta API-Football e devolve placares + classificaÃ§Ã£o
 
 const NAME_MAP = {
-  // América do Norte
-  "Mexico":"México","Canada":"Canadá","United States":"EUA","USA":"EUA",
+  // AmÃ©rica do Norte
+  "Mexico":"MÃ©xico","Canada":"CanadÃ¡","United States":"EUA","USA":"EUA",
   // Africa
-  "South Africa":"África do Sul","Morocco":"Marrocos","Egypt":"Egito",
-  "Ivory Coast":"Costa do Marfim","Cote D'Ivoire":"Costa do Marfim","Côte d'Ivoire":"Costa do Marfim",
-  "Ghana":"Gana","Tunisia":"Tunísia","Senegal":"Senegal","Algeria":"Argélia",
+  "South Africa":"Ãfrica do Sul","Morocco":"Marrocos","Egypt":"Egito",
+  "Ivory Coast":"Costa do Marfim","Cote D'Ivoire":"Costa do Marfim","CÃ´te d'Ivoire":"Costa do Marfim",
+  "Ghana":"Gana","Tunisia":"TunÃ­sia","Senegal":"Senegal","Algeria":"ArgÃ©lia",
   "Cape Verde":"Cabo Verde","DR Congo":"RD Congo","Congo DR":"RD Congo",
-  "New Zealand":"Nova Zelândia","Haiti":"Haiti",
+  "New Zealand":"Nova ZelÃ¢ndia","Haiti":"Haiti",
   // Europa
-  "England":"Inglaterra","France":"França","Spain":"Espanha","Germany":"Alemanha",
-  "Portugal":"Portugal","Netherlands":"Países Baixos","Belgium":"Bélgica",
-  "Croatia":"Croácia","Norway":"Noruega","Switzerland":"Suíça","Sweden":"Suécia",
-  "Scotland":"Escócia","Austria":"Áustria","Czech Republic":"Rep. Tcheca","Czechia":"Rep. Tcheca",
-  "Bosnia And Herzegovina":"Bósnia","Bosnia and Herzegovina":"Bósnia","Bosnia":"Bósnia",
-  "Serbia":"Sérvia","Ukraine":"Ucrânia","Romania":"Romênia","Hungary":"Hungria",
-  "Slovakia":"Eslováquia","Slovenia":"Eslovênia","Albania":"Albânia",
-  // Ásia/Oriente Médio
+  "England":"Inglaterra","France":"FranÃ§a","Spain":"Espanha","Germany":"Alemanha",
+  "Portugal":"Portugal","Netherlands":"PaÃ­ses Baixos","Belgium":"BÃ©lgica",
+  "Croatia":"CroÃ¡cia","Norway":"Noruega","Switzerland":"SuÃ­Ã§a","Sweden":"SuÃ©cia",
+  "Scotland":"EscÃ³cia","Austria":"Ãustria","Czech Republic":"Rep. Tcheca","Czechia":"Rep. Tcheca",
+  "Bosnia And Herzegovina":"BÃ³snia","Bosnia and Herzegovina":"BÃ³snia","Bosnia":"BÃ³snia",
+  "Serbia":"SÃ©rvia","Ukraine":"UcrÃ¢nia","Romania":"RomÃªnia","Hungary":"Hungria",
+  "Slovakia":"EslovÃ¡quia","Slovenia":"EslovÃªnia","Albania":"AlbÃ¢nia",
+  // Ãsia/Oriente MÃ©dio
   "South Korea":"Coreia do Sul","Korea Republic":"Coreia do Sul",
-  "Japan":"Japão","Iran":"Irã","Iraq":"Iraque","Saudi Arabia":"Arábia Saudita",
-  "Jordan":"Jordânia","Uzbekistan":"Uzbequistão","Qatar":"Catar",
-  "Australia":"Austrália","Turkey":"Turquia","Turkiye":"Turquia",
-  // América do Sul
-  "Brazil":"Brasil","Argentina":"Argentina","Uruguay":"Uruguai","Colombia":"Colômbia",
-  "Paraguay":"Paraguai","Ecuador":"Equador","Chile":"Chile","Peru":"Peru","Bolivia":"Bolívia",
+  "Japan":"JapÃ£o","Iran":"IrÃ£","Iraq":"Iraque","Saudi Arabia":"ArÃ¡bia Saudita",
+  "Jordan":"JordÃ¢nia","Uzbekistan":"UzbequistÃ£o","Qatar":"Catar",
+  "Australia":"AustrÃ¡lia","Turkey":"Turquia","Turkiye":"Turquia",
+  // AmÃ©rica do Sul
+  "Brazil":"Brasil","Argentina":"Argentina","Uruguay":"Uruguai","Colombia":"ColÃ´mbia",
+  "Paraguay":"Paraguai","Ecuador":"Equador","Chile":"Chile","Peru":"Peru","Bolivia":"BolÃ­via",
   // Outros
-  "Curacao":"Curaçao","Curaçao":"Curaçao","Panama":"Panamá"
+  "Curacao":"CuraÃ§ao","CuraÃ§ao":"CuraÃ§ao","Panama":"PanamÃ¡"
 };
 
 function ptName(name) {
@@ -41,7 +41,7 @@ module.exports = async function handler(req, res) {
 
   const key = process.env.FOOTBALL_API_KEY;
   if (!key) {
-    return res.status(500).json({ error: "FOOTBALL_API_KEY não configurada", hint: "Configure em Vercel → Settings → Environment Variables" });
+    return res.status(500).json({ error: "FOOTBALL_API_KEY nÃ£o configurada", hint: "Configure em Vercel â†’ Settings â†’ Environment Variables" });
   }
 
   const headers = {
@@ -89,7 +89,7 @@ module.exports = async function handler(req, res) {
       };
     });
 
-    // Classificação por grupo
+    // ClassificaÃ§Ã£o por grupo
     const standings = {};
     const allGroups = standData.response?.[0]?.league?.standings || [];
     allGroups.forEach(group => {
@@ -106,7 +106,7 @@ module.exports = async function handler(req, res) {
       });
     });
 
-    // Cache conservador: 45s no edge pra não perder gols
+    // Cache conservador: 45s no edge pra nÃ£o perder gols
     res.setHeader("Cache-Control", "s-maxage=45, stale-while-revalidate=60");
 
     return res.status(200).json({
