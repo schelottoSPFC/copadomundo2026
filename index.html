@@ -188,10 +188,12 @@
   .live-status.ls-err{color:var(--red)}
   .live-status.ls-warn{color:var(--amber)}
   .live-status.ls-loading{color:var(--muted)}
-  .live-bar-btns{display:flex;gap:8px;flex-wrap:wrap}
-  .live-bar button{background:var(--panel2);border:1px solid var(--line2);color:var(--muted);
-    font-family:var(--body);font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;transition:.15s}
-  .live-bar button:hover{color:var(--ink);border-color:var(--ink)}
+  #refresh-btn{background:var(--panel2);border:1px solid var(--line2);color:var(--muted);
+    width:36px;height:36px;border-radius:8px;cursor:pointer;display:grid;place-items:center;
+    transition:.2s;flex:none}
+  #refresh-btn:hover{color:var(--grass);border-color:var(--grass)}
+  #refresh-btn.spinning svg{animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
 
   /* debug box */
   #debug-box{display:none;margin-top:10px;background:var(--panel2);border:1px solid var(--line2);
@@ -275,17 +277,15 @@
   <header>
     <div class="top">
       <span class="mark">COPA 2026</span>
-      <span class="pill"><span class="dot"></span><b>Não iniciado</b> · 0 de 104 jogos</span>
+      <span class="pill"><span class="dot"></span><b id="status-pill">Aguardando atualização</b></span>
     </div>
     <h1>Painel - Copa 2026</h1>
-  <div class="live-bar">
-    <span class="live-status ls-loading" id="live-status">⏳ Conectando à API...</span>
-    <div class="live-bar-btns">
-      <button id="refresh-btn">↻ Atualizar agora</button>
-      <button id="debug-toggle">🔍 Diagnóstico API</button>
+    <div class="live-bar">
+      <span class="live-status" id="live-status">⏳ Conectando...</span>
+      <button id="refresh-btn" title="Buscar placares agora" aria-label="Buscar placares">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      </button>
     </div>
-  </div>
-  <div id="debug-box"></div>
   </header>
 
   <div class="tabs">
@@ -729,87 +729,66 @@ document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
   window.scrollTo({top:0,behavior:"smooth"});
 }));
 
-// ---- LIVE UPDATE ----
-let liveTimer;
-let lastApiData = null;
+// ---- LIVE UPDATE via /api/scores (chave protegida no Vercel) ----
+let liveTimer, lastApiData=null;
 
-// Normaliza string pra comparação: remove acentos, lowercase, trim
-// "México" e "Mexico" → "mexico" | "África do Sul" e "Africa do Sul" → "africa do sul"
 function norm(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim(); }
 
-function setLiveStatus(type, msg){
-  const el = document.getElementById("live-status");
-  if(!el) return;
-  const icons = { ok:"✅", warn:"⚠️", err:"❌", loading:"⏳" };
-  el.textContent = (icons[type]||"") + " " + msg;
-  el.className = "live-status ls-"+type;
+function setLiveStatus(type,msg){
+  const el=document.getElementById("live-status");
+  if(el){el.textContent=msg;el.className="live-status ls-"+type;}
+}
+
+function setRefreshSpin(on){
+  document.getElementById("refresh-btn")?.classList.toggle("spinning",on);
 }
 
 async function fetchLive(){
+  setRefreshSpin(true);
   setLiveStatus("loading","⏳ Buscando placares...");
   try{
-    const r = await fetch("/api/scores");
-
-    // Verifica se realmente voltou JSON (evita erro ao parsear HTML de 404/500)
-    const ct = r.headers.get("content-type") || "";
+    const r=await fetch("/api/scores");
+    const ct=r.headers.get("content-type")||"";
     if(!ct.includes("application/json")){
-      const txt = await r.text();
-      setLiveStatus("err",
-        `❌ API retornou ${r.status} (${ct||"sem content-type"}) — função não encontrada no Vercel. `+
-        `Verifique se api/scores.js está na raiz do projeto.`
-      );
-      console.error("Resposta não-JSON:", txt.slice(0,300));
-      return;
+      setLiveStatus("err","❌ API não encontrada — veja o guia de deploy no README.");
+      setRefreshSpin(false); return;
     }
-
-    const data = await r.json();
+    const data=await r.json();
     if(!r.ok){
-      setLiveStatus("err", "❌ Erro " + r.status + ": " + (data.error||"resposta inválida"));
-      renderDebug(data);
-      return;
+      setLiveStatus("err","❌ Erro "+r.status+": "+(data.error||"verifique FOOTBALL_API_KEY no Vercel"));
+      setRefreshSpin(false); return;
     }
-    lastApiData = data;
-    const total = (data.matches||[]).length;
-    const live  = (data.matches||[]).filter(m=>["1H","2H","HT","ET"].includes(m.status)).length;
-    const ft    = (data.matches||[]).filter(m=>["FT","AET","PEN"].includes(m.status)).length;
-    setLiveStatus("ok",
-      "✅ Atualizado " + new Date(data.updated).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) +
-      " · " + total + " jogo(s) hoje · " + live + " ao vivo · " + ft + " encerrado(s)"
-    );
-    if(data.matches)   updateSchedule(data.matches);
+    lastApiData=data;
+    const total=(data.matches||[]).length;
+    const live=(data.matches||[]).filter(m=>["1H","2H","HT","ET"].includes(m.status)).length;
+    const ft=(data.matches||[]).filter(m=>["FT","AET","PEN"].includes(m.status)).length;
+    const t=new Date(data.updated).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    setLiveStatus("ok","✅ "+t+" · "+total+" jogo(s) hoje"+(live?" · "+live+" ao vivo":"")+(ft?" · "+ft+" encerrado(s)":""));
+    if(data.matches) updateSchedule(data.matches);
     if(data.standings) updateStandings(data.standings);
-    renderDebug(data);
-  } catch(e){
-    setLiveStatus("err","❌ Falha na conexão: " + e.message);
+  }catch(e){
+    setLiveStatus("err","❌ "+e.message);
   }
+  setRefreshSpin(false);
 }
 
 function updateSchedule(matches){
-  const seps = document.querySelectorAll(".fsep");
+  const seps=document.querySelectorAll(".fsep");
   matches.forEach(m=>{
-    const mHome = norm(m.home), mAway = norm(m.away);
     seps.forEach(sep=>{
-      if(norm(sep.dataset.ha)===mHome && norm(sep.dataset.aw)===mAway){
+      if(norm(sep.dataset.ha)===norm(m.home)&&norm(sep.dataset.aw)===norm(m.away)){
         if(m.status==="NS") return;
-        const sh = m.score_home ?? "-", sa = m.score_away ?? "-";
-        sep.textContent = sh + " × " + sa;
-        const fx = sep.closest(".fix");
-        if(!fx) return;
+        sep.textContent=(m.score_home??"-")+" × "+(m.score_away??"-");
+        const fx=sep.closest(".fix"); if(!fx) return;
         fx.classList.remove("live","ft");
-        const isLive = ["1H","2H","ET"].includes(m.status);
-        const isHT   = m.status === "HT";
-        const isFT   = ["FT","AET","PEN"].includes(m.status);
-        // limpa badge anterior
-        const oldB = fx.querySelector(".livebadge"); if(oldB) oldB.remove();
-        if(isLive || isHT){
+        const oldB=fx.querySelector(".livebadge"); if(oldB) oldB.remove();
+        const isLive=["1H","2H","ET"].includes(m.status), isHT=m.status==="HT", isFT=["FT","AET","PEN"].includes(m.status);
+        if(isLive||isHT){
           fx.classList.add("live");
-          const b = document.createElement("span");
-          b.className = "livebadge";
-          b.textContent = isHT ? "INTERVALO" : (m.minute ? "AO VIVO "+m.minute+"'" : "AO VIVO");
+          const b=document.createElement("span"); b.className="livebadge";
+          b.textContent=isHT?"INTERVALO":(m.minute?"AO VIVO "+m.minute+"'":"AO VIVO");
           sep.after(b);
-        } else if(isFT){
-          fx.classList.add("ft");
-        }
+        } else if(isFT) fx.classList.add("ft");
       }
     });
   });
@@ -818,85 +797,33 @@ function updateSchedule(matches){
 function updateStandings(standings){
   Object.entries(standings).forEach(([g,teams])=>{
     teams.sort((a,b)=>a.rank-b.rank);
-    const card = document.querySelector('.gcard[data-g="'+g+'"]');
-    if(!card) return;
+    const card=document.querySelector('.gcard[data-g="'+g+'"]'); if(!card) return;
     teams.forEach(t=>{
-      // busca por nome normalizado para evitar mismatch de acento
-      const rows = card.querySelectorAll("tr[data-team]");
-      rows.forEach(row=>{
+      card.querySelectorAll("tr[data-team]").forEach(row=>{
         if(norm(row.dataset.team)===norm(t.team)){
           const p=row.querySelector('[data-s="pts"]'),j=row.querySelector('[data-s="j"]'),s=row.querySelector('[data-s="sg"]');
-          if(p) p.textContent=t.pts; if(j) j.textContent=t.j;
-          if(s) s.textContent=t.sg>0?"+"+t.sg:t.sg;
+          if(p)p.textContent=t.pts; if(j)j.textContent=t.j;
+          if(s)s.textContent=t.sg>0?"+"+t.sg:t.sg;
         }
       });
     });
-    const tbody = card.querySelector("tbody");
+    const tbody=card.querySelector("tbody");
     if(tbody){
-      const rows = [...tbody.querySelectorAll("tr")];
-      rows.sort((a,b)=>{
-        const at=teams.find(t=>norm(t.team)===norm(a.dataset.team));
-        const bt=teams.find(t=>norm(t.team)===norm(b.dataset.team));
-        return (at?.rank||99)-(bt?.rank||99);
-      });
+      const rows=[...tbody.querySelectorAll("tr")];
+      rows.sort((a,b)=>(teams.find(t=>norm(t.team)===norm(a.dataset.team))?.rank||99)-(teams.find(t=>norm(t.team)===norm(b.dataset.team))?.rank||99));
       rows.forEach(r=>tbody.appendChild(r));
     }
   });
 }
 
-// ---- Debug panel (visível no painel, abrível por botão) ----
-function renderDebug(data){
-  const box = document.getElementById("debug-box");
-  if(!box || !box.classList.contains("open")) return;
-  if(!data){ box.innerHTML="<em>Sem dados ainda</em>"; return; }
-  const rows = (data.matches||[]).map(m=>
-    `<tr><td>${m.home_raw||m.home}</td><td>${m.away_raw||m.away}</td>`+
-    `<td>${m.score_home??"-"} × ${m.score_away??"-"}</td><td>${m.status}</td><td>${m.minute||""}</td></tr>`
-  ).join("");
-  box.innerHTML =
-    `<b>API respondeu:</b> ${data.updated ? new Date(data.updated).toLocaleTimeString("pt-BR") : "-"}<br>`+
-    `Ao vivo: ${data.live_count||0} · Hoje: ${data.today_count||0}<br><br>`+
-    (rows
-      ? `<table style="font-size:11px;border-collapse:collapse;width:100%">`+
-        `<tr style="background:rgba(255,255,255,.08)"><th>Casa</th><th>Fora</th><th>Placar</th><th>Status</th><th>Min</th></tr>`+
-        rows+`</table>`
-      : "<em>Nenhum jogo retornado pela API hoje.</em>"
-    );
-}
+document.getElementById("refresh-btn")?.addEventListener("click",fetchLive);
 
-function isOnServer(){
-  const h = location.hostname;
-  return h && h !== "localhost" && h !== "" && location.protocol !== "file:";
-}
-
-function startLive(){
-  if(!isOnServer()){
-    setLiveStatus("warn","⚠️ Dados ao vivo disponíveis apenas no Vercel — aqui você está em modo local.");
-    return;
-  }
-  fetchLive();
-  liveTimer = setInterval(fetchLive, 90000);
-  document.addEventListener("visibilitychange",()=>{
-    clearInterval(liveTimer);
-    if(!document.hidden){ fetchLive(); liveTimer=setInterval(fetchLive,90000); }
-  });
-}
-
-// botão de debug
-document.getElementById("debug-toggle")?.addEventListener("click",function(){
-  if(!isOnServer()){ setLiveStatus("warn","⚠️ Diagnóstico só funciona no Vercel."); return; }
-  const box = document.getElementById("debug-box");
-  const isOpen = box.classList.toggle("open");
-  this.textContent = isOpen ? "Fechar diagnóstico" : "🔍 Diagnóstico API";
-  if(isOpen) renderDebug(lastApiData);
+// auto-refresh a cada 90s
+fetchLive();
+setInterval(fetchLive,90000);
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden) fetchLive();
 });
-
-document.getElementById("refresh-btn")?.addEventListener("click", ()=>{
-  if(!isOnServer()){ setLiveStatus("warn","⚠️ Atualização só funciona no Vercel."); return; }
-  fetchLive();
-});
-
-startLive();
 </script>
 </body>
 </html>
