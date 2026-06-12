@@ -56,7 +56,11 @@ module.exports = async function handler(req, res) {
       jogos_ao_vivo: live.length,
       jogos_ao_vivo_detalhes: live,
       jogos_hoje: todayGames.length,
-      jogos_hoje_detalhes: todayGames
+      jogos_hoje_detalhes: todayGames,
+      live_raw_errors: liveData.errors,
+      live_results: liveData.results,
+      today_raw_errors: todayData.errors,
+      today_results: todayData.results
     });
 
   } catch (err) {
