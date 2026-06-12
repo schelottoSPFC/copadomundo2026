@@ -125,6 +125,10 @@
   .mtag.top2{background:rgba(79,157,247,.16);color:#9cc6fb}
   .mtag.venc{background:rgba(242,166,12,.18);color:#f4c059}
   .row-dim{opacity:.4}
+  .tscore{display:none;font-family:var(--mono);font-weight:700;font-size:10px;padding:1px 6px;border-radius:4px;margin-left:7px;background:var(--chip);color:var(--ink);vertical-align:middle}
+  .tscore:not(:empty){display:inline-block}
+  .tscore.live{background:rgba(39,185,110,.18);color:var(--grass);animation:pulse 2s infinite}
+  .tscore.ft{color:var(--muted)}
 
   /* legend / filter bar */
   .filterbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
@@ -551,7 +555,7 @@ function renderGroups(){
         dataM=` data-m="${[...mset].join(" ")}"`;
       }
       return `<tr class="${marked}" data-team="${name}"${dataM}>`+
-        `<td class="team-cell">${flag(name,'fl')}<span class="tcode">${code}</span>${name}${tags}</td>`+
+        `<td class="team-cell">${flag(name,'fl')}<span class="tcode">${code}</span>${name}<span class="tscore" data-team="${name}"></span>${tags}</td>`+
         `<td data-s="pts">0</td><td data-s="j">0</td><td data-s="sg">0</td></tr>`;
     }).join("");
     const card=document.createElement("div");
@@ -765,6 +769,7 @@ async function fetchLive(){
     const t=new Date(data.updated).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
     setLiveStatus("ok","✅ "+t+" · "+total+" jogo(s) hoje"+(live?" · "+live+" ao vivo":"")+(ft?" · "+ft+" encerrado(s)":""));
     if(data.matches) updateSchedule(data.matches);
+    if(data.matches) updateGroupScores(data.matches);
     if(data.standings) updateStandings(data.standings);
   }catch(e){
     setLiveStatus("err","❌ "+e.message);
@@ -791,6 +796,24 @@ function updateSchedule(matches){
         } else if(isFT) fx.classList.add("ft");
       }
     });
+  });
+}
+
+function updateGroupScores(matches){
+  document.querySelectorAll(".tscore").forEach(el=>{
+    const team=el.dataset.team;
+    const m=matches.find(mt=>norm(mt.home)===norm(team)||norm(mt.away)===norm(team));
+    if(!m||m.status==="NS"||m.score_home==null||m.score_away==null){
+      el.textContent=""; el.className="tscore"; el.removeAttribute("title"); return;
+    }
+    const isHome=norm(m.home)===norm(team);
+    const own=isHome?m.score_home:m.score_away;
+    const opp=isHome?m.score_away:m.score_home;
+    const isLive=["1H","2H","HT","ET"].includes(m.status);
+    const isFT=["FT","AET","PEN"].includes(m.status);
+    el.textContent=own+"-"+opp;
+    el.className="tscore"+(isLive?" live":"")+(isFT?" ft":"");
+    el.title=m.home+" "+m.score_home+" x "+m.score_away+" "+m.away+(isLive&&m.minute?(" · "+m.minute+"'"):"");
   });
 }
 
